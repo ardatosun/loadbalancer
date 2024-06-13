@@ -27,17 +27,26 @@ func (s *ServerPool) NextIndex() int {
 
 // GetNextPeer returns the next active peer to take a connection
 func (s *ServerPool) GetNextPeer() *backends.Backend {
+	// Get the next index using round-robin algorithm
 	next := s.NextIndex()
-	l := len(s.backends) + next
+	// Calculate the length of the list to avoid infinite loops
+	l := len(s.backends) + next // start from next and move a full cycle
+
+	// Loop through the backends starting from the next index
 	for i := next; i < l; i++ {
+		// Calculate the current index using modulo operation
 		idx := i % len(s.backends)
+		// Check if the backend at the current index is alive
 		if s.backends[idx].IsAlive() {
+			// If the found index is not the same as the original next index, update the current index
 			if i != next {
 				atomic.StoreUint32(&s.current, uint32(idx))
 			}
+			// Return the alive backend
 			return s.backends[idx]
 		}
 	}
+	// If no alive backend is found, return nil
 	return nil
 }
 
