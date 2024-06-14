@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -20,14 +22,14 @@ const (
 var pool serverpool.ServerPool
 
 func main() {
-	hardcodedBackends := []string{
-		"http://localhost:8081",
-		"http://localhost:8082",
-		"http://localhost:8083",
+	// Read backend URLs from environment variable BACKEND_URLS
+	backendURLs := strings.Split(strings.TrimSpace(os.Getenv("BACKEND_URLS")), ",")
+	if len(backendURLs) == 0 {
+		log.Fatal("BACKEND_URLS environment variable is not set")
 	}
 
 	// Parse backend URLs and add them to the server pool
-	for _, backend := range hardcodedBackends {
+	for _, backend := range backendURLs {
 		url, err := url.Parse(backend)
 		if err != nil {
 			log.Fatal(err)
