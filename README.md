@@ -24,7 +24,7 @@ It uses Docker and Docker Compose to spin up multiple backend HTTP servers and a
 1. **Build and start the containers:**
 
    ```bash
-   docker-compose up --build
+   docker compose up --build
    ```
 2. **Test the Load Balancer:**
 
