@@ -1,3 +1,11 @@
+## Hacktoberfest 2024 ![Hacktoberfest](https://img.shields.io/badge/Hacktoberfest-2024-blueviolet?style=for-the-badge)
+Ccontributions from all levels of experience are welcome! To contribute:
+- Fork the repository
+- Make your changes
+- Open a pull request (PR)
+
+Be sure to read the contribution guidelines and code of conduct before submitting your PR.
+
 # Simple Go Load Balancer
 
 This project demonstrates a basic load balancer implemented in Go. It only uses the standard http library.
