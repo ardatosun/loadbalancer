@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-func HealthCheck(pool *serverpool.ServerPool) {
-	t := time.NewTicker(2 * time.Minute)
+func HealthCheck(pool *serverpool.ServerPool, healthCheckIntervalInSeconds int) {
+	t := time.NewTicker(time.Second * time.Duration(healthCheckIntervalInSeconds))
 	for {
 		select {
 		case <-t.C:
