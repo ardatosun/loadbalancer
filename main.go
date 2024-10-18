@@ -10,8 +10,13 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
+)
+
+var (
+	defaultHealthCheckIntervalInSeconds = 120
 )
 
 const (
@@ -24,6 +29,17 @@ var pool serverpool.ServerPool
 func main() {
 	// Read backend URLs from environment variable BACKEND_URLS
 	backendURLs := strings.Split(strings.TrimSpace(os.Getenv("BACKEND_URLS")), ",")
+	healthCheckIntervalEnv := os.Getenv("HEALTH_CHECK_INTERVAL")
+	healthCheckInterval := defaultHealthCheckIntervalInSeconds
+
+	var err error
+	if healthCheckIntervalEnv != "" {
+		healthCheckInterval, err = strconv.Atoi(healthCheckIntervalEnv)
+		if err != nil {
+			log.Fatal("HEALTH_CHECK_INTERVAL enviornment variable is not valid")
+		}
+	}
+
 	if len(backendURLs) == 0 {
 		log.Fatal("BACKEND_URLS environment variable is not set")
 	}
@@ -38,7 +54,7 @@ func main() {
 	}
 
 	// Start health checking in a separate goroutine
-	go health.HealthCheck(&pool)
+	go health.HealthCheck(&pool, healthCheckInterval)
 
 	// Handle incoming requests
 	http.HandleFunc("/", handleRequest)
