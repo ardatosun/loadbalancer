@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
+	log "github.com/sirupsen/logrus"
 	"loadbalancer/backends"
 	"loadbalancer/health"
 	"loadbalancer/serverpool"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -18,6 +18,11 @@ import (
 var (
 	defaultHealthCheckIntervalInSeconds = 120
 )
+
+func init() {
+	log.SetFormatter(&log.JSONFormatter{})
+	log.SetLevel(log.InfoLevel)
+}
 
 const (
 	Attempts int = iota
@@ -63,6 +68,17 @@ func main() {
 }
 
 func handleRequest(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
+
+	// Create a logger with request-specific fields
+	logger := log.WithFields(log.Fields{
+		"method":     r.Method,
+		"url":        r.URL.String(),
+		"remoteAddr": r.RemoteAddr,
+		"userAgent":  r.UserAgent(),
+	})
+	log.Printf("Incoming request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+
 	attempts := GetAttemptsFromContext(r)
 	if attempts > 3 {
 		log.Printf("%s(%s) Max attempts reached, terminating\n", r.RemoteAddr, r.URL.Path)
@@ -71,6 +87,32 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	loadBalance(w, r)
+
+	// Create a custom ResponseWriter to capture response details
+	crw := &customResponseWriter{ResponseWriter: w}
+
+	logger.WithFields(log.Fields{
+		"status":       crw.status,
+		"responseTime": time.Since(startTime),
+		"attempts":     attempts,
+	}).Info("Request processed and response sent")
+}
+
+type customResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (crw *customResponseWriter) WriteHeader(status int) {
+	crw.status = status
+	crw.ResponseWriter.WriteHeader(status)
+}
+
+func (crw *customResponseWriter) Write(b []byte) (int, error) {
+	if crw.status == 0 {
+		crw.status = http.StatusOK
+	}
+	return crw.ResponseWriter.Write(b)
 }
 
 func loadBalance(w http.ResponseWriter, r *http.Request) {
