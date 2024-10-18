@@ -94,6 +94,7 @@ func isBackendAlive(u *url.URL) bool {
 		log.Println("Site unreachable", err)
 		return false
 	}
+	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
 		log.Printf("Health check failed with status code: %d", res.StatusCode)
