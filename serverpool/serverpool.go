@@ -1,9 +1,10 @@
 package serverpool
 
 import (
+	"context"
 	"loadbalancer/backends"
 	"log"
-	"net"
+	"net/http"
 	"net/url"
 	"sync/atomic"
 	"time"
@@ -75,12 +76,30 @@ func (s *ServerPool) HealthCheck() {
 
 // isBackendAlive checks whether a backend is alive by establishing a TCP connection
 func isBackendAlive(u *url.URL) bool {
+	u.Path = "/health"
 	timeout := 2 * time.Second
-	conn, err := net.DialTimeout("tcp", u.Host, timeout)
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		log.Println("Site unreachable, error:", err)
+		log.Println("Unable to create the request context", err)
+		panic(err)
+	}
+
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		log.Println("Site unreachable", err)
 		return false
 	}
-	_ = conn.Close()
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		log.Printf("Health check failed with status code: %d", res.StatusCode)
+		return false
+	}
+
 	return true
 }
