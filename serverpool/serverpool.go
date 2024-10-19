@@ -2,6 +2,7 @@ package serverpool
 
 import (
 	"context"
+	"io"
 	"loadbalancer/backends"
 	"log"
 	"net/http"
@@ -26,29 +27,33 @@ func (s *ServerPool) NextIndex() int {
 	return int(atomic.AddUint32(&s.current, 1) % uint32(len(s.backends)))
 }
 
-// GetNextPeer returns the next active peer to take a connection
+// GetNextPeer returns the next peer with the lowest latency
 func (s *ServerPool) GetNextPeer() *backends.Backend {
-	// Get the next index using round-robin algorithm
-	next := s.NextIndex()
-	// Calculate the length of the list to avoid infinite loops
-	l := len(s.backends) + next // start from next and move a full cycle
+	var selected *backends.Backend
+	lowestLatency := time.Duration(1<<63 - 1) // Max int64
 
-	// Loop through the backends starting from the next index
-	for i := next; i < l; i++ {
-		// Calculate the current index using modulo operation
-		idx := i % len(s.backends)
-		// Check if the backend at the current index is alive
-		if s.backends[idx].IsAlive() {
-			// If the found index is not the same as the original next index, update the current index
-			if i != next {
-				atomic.StoreUint32(&s.current, uint32(idx))
+	for _, b := range s.backends {
+		if b.IsAlive() {
+			latency := b.GetLatency()
+			if latency < lowestLatency {
+				lowestLatency = latency
+				selected = b
 			}
-			// Return the alive backend
-			return s.backends[idx]
 		}
 	}
-	// If no alive backend is found, return nil
-	return nil
+
+	// Return the backend with the lowest latency
+	if selected != nil {
+		return selected
+	}
+
+	// Fallback to round-robin if no alive backend is found
+	return s.backends[s.NextIndex()]
+}
+
+// GetBackends returns the list of backends in the pool
+func (s *ServerPool) GetBackends() []*backends.Backend {
+	return s.backends
 }
 
 // MarkBackendStatus changes the status of a backend
@@ -94,7 +99,12 @@ func isBackendAlive(u *url.URL) bool {
 		log.Println("Site unreachable", err)
 		return false
 	}
-	defer res.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(res.Body)
 
 	if res.StatusCode != http.StatusOK {
 		log.Printf("Health check failed with status code: %d", res.StatusCode)
