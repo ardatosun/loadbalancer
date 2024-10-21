@@ -15,10 +15,6 @@ import (
 	"time"
 )
 
-var (
-	defaultHealthCheckIntervalInSeconds = 120
-)
-
 func init() {
 	log.SetFormatter(&log.JSONFormatter{})
 	log.SetLevel(log.InfoLevel)
@@ -35,11 +31,10 @@ func main() {
 	// Read backend URLs from environment variable BACKEND_URLS
 	backendURLs := strings.Split(strings.TrimSpace(os.Getenv("BACKEND_URLS")), ",")
 	healthCheckIntervalEnv := os.Getenv("HEALTH_CHECK_INTERVAL")
-	healthCheckInterval := defaultHealthCheckIntervalInSeconds
 
 	var err error
 	if healthCheckIntervalEnv != "" {
-		healthCheckInterval, err = strconv.Atoi(healthCheckIntervalEnv)
+		_, err = strconv.Atoi(healthCheckIntervalEnv)
 		if err != nil {
 			log.Fatal("HEALTH_CHECK_INTERVAL enviornment variable is not valid")
 		}
@@ -59,7 +54,7 @@ func main() {
 	}
 
 	// Start health checking in a separate goroutine
-	go health.HealthCheck(&pool, healthCheckInterval)
+	go health.HealthCheck(&pool)
 
 	// Handle incoming requests
 	http.HandleFunc("/", handleRequest)
