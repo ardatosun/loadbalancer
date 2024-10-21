@@ -1,0 +1,9 @@
+backends:
+  - url: http://backend1.example.com
+  - url: http://backend2.example.com
+
+health_check_interval: 10s   # Interval for health checks (e.g., 10s, 1m)
+max_latency: 100ms           # Maximum allowable latency
+health_check_timeout: 2s     # Timeout for health checks
+max_retries: 3               # Max retries before marking backend as down
+port: 8080                   # Port the load balancer will listen on

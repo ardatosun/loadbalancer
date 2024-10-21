@@ -1,11 +1,13 @@
 package main
 
 import (
-	"context"
-	log "github.com/sirupsen/logrus"
+	"fmt"
+	"gopkg.in/yaml.v2"
+	"io/ioutil"
 	"loadbalancer/backends"
 	"loadbalancer/health"
 	"loadbalancer/serverpool"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -15,149 +17,111 @@ import (
 	"time"
 )
 
-func init() {
-	log.SetFormatter(&log.JSONFormatter{})
-	log.SetLevel(log.InfoLevel)
+// Config structure to hold the parsed YAML values
+type Config struct {
+	Backends            []BackendConfig `yaml:"backends"`
+	HealthCheckInterval string          `yaml:"health_check_interval"`
+	MaxLatency          string          `yaml:"max_latency"`
+	HealthCheckTimeout  string          `yaml:"health_check_timeout"`
+	MaxRetries          int             `yaml:"max_retries"`
+	Port                int             `yaml:"port"`
 }
 
-const (
-	Attempts int = iota
-	Retry
-)
+// BackendConfig represents a backend server configuration
+type BackendConfig struct {
+	URL string `yaml:"url"`
+}
 
 var pool serverpool.ServerPool
 
+func init() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+}
+
 func main() {
-	// Read backend URLs from environment variable BACKEND_URLS
-	backendURLs := strings.Split(strings.TrimSpace(os.Getenv("BACKEND_URLS")), ",")
-	healthCheckIntervalEnv := os.Getenv("HEALTH_CHECK_INTERVAL")
+	// Load config from YAML file
+	config := loadConfig()
 
-	var err error
-	if healthCheckIntervalEnv != "" {
-		_, err = strconv.Atoi(healthCheckIntervalEnv)
-		if err != nil {
-			log.Fatal("HEALTH_CHECK_INTERVAL enviornment variable is not valid")
-		}
-	}
-
-	if len(backendURLs) == 0 {
-		log.Fatal("BACKEND_URLS environment variable is not set")
-	}
+	// Override with environment variables if available
+	overrideWithEnv(&config)
 
 	// Parse backend URLs and add them to the server pool
-	for _, backend := range backendURLs {
-		url, err := url.Parse(backend)
+	for _, backend := range config.Backends {
+		url, err := url.Parse(backend.URL)
 		if err != nil {
 			log.Fatal(err)
 		}
 		pool.AddBackend(&backends.Backend{URL: url, Alive: true})
 	}
 
-	// Start health checking in a separate goroutine
-	go health.HealthCheck(&pool)
+	// Start health checks with configured intervals
+	healthCheckInterval, _ := time.ParseDuration(config.HealthCheckInterval)
+	go health.CheckHealth(&pool, healthCheckInterval)
 
 	// Handle incoming requests
 	http.HandleFunc("/", handleRequest)
-	log.Println("Load Balancer started on :8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+
+	port := fmt.Sprintf(":%d", config.Port)
+	log.Printf("Load Balancer started on %s", port)
+	log.Fatal(http.ListenAndServe(port, nil))
+}
+
+// loadConfig parses the YAML configuration file
+func loadConfig() Config {
+	var config Config
+	file, err := ioutil.ReadFile("config.yaml")
+	if err != nil {
+		log.Fatalf("Error reading config file: %v", err)
+	}
+
+	err = yaml.Unmarshal(file, &config)
+	if err != nil {
+		log.Fatalf("Error parsing YAML: %v", err)
+	}
+
+	return config
+}
+
+// overrideWithEnv overrides config values with environment variables if present
+func overrideWithEnv(config *Config) {
+	if envURLs := os.Getenv("BACKEND_URLS"); envURLs != "" {
+		config.Backends = parseBackendURLs(envURLs)
+	}
+
+	if interval := os.Getenv("HEALTH_CHECK_INTERVAL"); interval != "" {
+		config.HealthCheckInterval = interval
+	}
+
+	if port := os.Getenv("PORT"); port != "" {
+		config.Port, _ = strconv.Atoi(port)
+	}
+}
+
+// parseBackendURLs parses backend URLs from a comma-separated string
+func parseBackendURLs(backendURLs string) []BackendConfig {
+	var backends []BackendConfig
+	for _, url := range strings.Split(backendURLs, ",") {
+		backends = append(backends, BackendConfig{URL: strings.TrimSpace(url)})
+	}
+	return backends
 }
 
 func handleRequest(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
-	// Create a logger with request-specific fields
-	logger := log.WithFields(log.Fields{
-		"method":     r.Method,
-		"url":        r.URL.String(),
-		"remoteAddr": r.RemoteAddr,
-		"userAgent":  r.UserAgent(),
-	})
-	log.Printf("Incoming request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
-
-	attempts := GetAttemptsFromContext(r)
-	if attempts > 3 {
-		log.Printf("%s(%s) Max attempts reached, terminating\n", r.RemoteAddr, r.URL.Path)
-		http.Error(w, "Service not available", http.StatusServiceUnavailable)
-		return
-	}
-
+	// Process request
 	loadBalance(w, r)
 
-	// Create a custom ResponseWriter to capture response details
-	crw := &customResponseWriter{ResponseWriter: w}
-
-	logger.WithFields(log.Fields{
-		"status":       crw.status,
-		"responseTime": time.Since(startTime),
-		"attempts":     attempts,
-	}).Info("Request processed and response sent")
-}
-
-type customResponseWriter struct {
-	http.ResponseWriter
-	status int
-}
-
-func (crw *customResponseWriter) WriteHeader(status int) {
-	crw.status = status
-	crw.ResponseWriter.WriteHeader(status)
-}
-
-func (crw *customResponseWriter) Write(b []byte) (int, error) {
-	if crw.status == 0 {
-		crw.status = http.StatusOK
-	}
-	return crw.ResponseWriter.Write(b)
+	log.Printf("Request processed in %v", time.Since(startTime))
 }
 
 func loadBalance(w http.ResponseWriter, r *http.Request) {
-	// Get the next backend server using round-robin
 	backend := pool.GetNextPeer()
 	if backend == nil {
-		http.Error(w, "Service not available", http.StatusServiceUnavailable)
+		http.Error(w, "Service unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
-	// Create a reverse proxy
 	proxy := httputil.NewSingleHostReverseProxy(backend.URL)
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, e error) {
-		log.Printf("[%s] %s\n", backend.URL.Host, e.Error())
-		retries := GetRetryFromContext(r)
-		if retries < 3 {
-			select {
-			case <-time.After(10 * time.Millisecond):
-				ctx := context.WithValue(r.Context(), Retry, retries+1)
-				proxy.ServeHTTP(w, r.WithContext(ctx))
-			}
-			return
-		}
-
-		// After 3 retries, mark this backend as down
-		pool.MarkBackendStatus(backend.URL, false)
-
-		// If the same request routing for a few attempts with different backends, increase the count
-		attempts := GetAttemptsFromContext(r)
-		log.Printf("%s(%s) Attempting retry %d\n", r.RemoteAddr, r.URL.Path, attempts)
-		ctx := context.WithValue(r.Context(), Attempts, attempts+1)
-		loadBalance(w, r.WithContext(ctx)) // Retry using lb function
-	}
-
-	// Serve the request using the reverse proxy
 	proxy.ServeHTTP(w, r)
-}
-
-// GetAttemptsFromContext returns the number of attempts for a request
-func GetAttemptsFromContext(r *http.Request) int {
-	if attempts, ok := r.Context().Value(Attempts).(int); ok {
-		return attempts
-	}
-	return 0
-}
-
-// GetRetryFromContext returns the number of retries for a request
-func GetRetryFromContext(r *http.Request) int {
-	if retry, ok := r.Context().Value(Retry).(int); ok {
-		return retry
-	}
-	return 0
 }
