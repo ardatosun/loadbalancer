@@ -1,8 +1,6 @@
 package serverpool
 
 import (
-	"context"
-	"io"
 	"loadbalancer/backends"
 	"log"
 	"net/http"
@@ -11,10 +9,10 @@ import (
 	"time"
 )
 
-// ServerPool holds information about reachable backends
+// ServerPool holds information about the list of backend servers and their current state
 type ServerPool struct {
 	backends []*backends.Backend
-	current  uint32
+	current  uint32 // To maintain round-robin state for backends
 }
 
 // AddBackend adds a backend to the server pool
@@ -22,17 +20,18 @@ func (s *ServerPool) AddBackend(backend *backends.Backend) {
 	s.backends = append(s.backends, backend)
 }
 
-// NextIndex atomically increases the counter and returns an index
+// NextIndex atomically increases the counter and returns an index for round-robin load balancing
 func (s *ServerPool) NextIndex() int {
 	return int(atomic.AddUint32(&s.current, 1) % uint32(len(s.backends)))
 }
 
-// GetNextPeer returns the next peer with the lowest latency
+// GetNextPeer returns the next available backend based on latency. If no backend is alive, it falls back to round-robin.
 func (s *ServerPool) GetNextPeer() *backends.Backend {
 	var selected *backends.Backend
-	lowestLatency := time.Duration(1<<63 - 1) // Max int64
+	lowestLatency := time.Duration(1<<63 - 1) // Max int64 to find the backend with the lowest latency
 
 	for _, b := range s.backends {
+		// Only consider backends that are alive
 		if b.IsAlive() {
 			latency := b.GetLatency()
 			if latency < lowestLatency {
@@ -42,31 +41,39 @@ func (s *ServerPool) GetNextPeer() *backends.Backend {
 		}
 	}
 
-	// Return the backend with the lowest latency
+	// If no alive backends found, fall back to round-robin
 	if selected != nil {
+		log.Printf("Selected backend %s with lowest latency: %v", selected.URL, lowestLatency)
 		return selected
 	}
 
-	// Fallback to round-robin if no alive backend is found
-	return s.backends[s.NextIndex()]
+	// Fallback to round-robin selection
+	index := s.NextIndex()
+	log.Printf("Falling back to round-robin. Selected backend: %s", s.backends[index].URL)
+	return s.backends[index]
 }
 
-// GetBackends returns the list of backends in the pool
+// GetBackends returns the list of backends in the server pool
 func (s *ServerPool) GetBackends() []*backends.Backend {
 	return s.backends
 }
 
-// MarkBackendStatus changes the status of a backend
+// MarkBackendStatus marks a backend's status as alive or down based on health checks
 func (s *ServerPool) MarkBackendStatus(backendUrl *url.URL, alive bool) {
 	for _, b := range s.backends {
 		if b.URL.String() == backendUrl.String() {
 			b.SetAlive(alive)
+			status := "up"
+			if !alive {
+				status = "down"
+			}
+			log.Printf("Backend %s marked as %s", b.URL, status)
 			break
 		}
 	}
 }
 
-// HealthCheck pings the backends and updates their status
+// HealthCheck runs the health checks for all backends in the pool and updates their statuses
 func (s *ServerPool) HealthCheck() {
 	for _, b := range s.backends {
 		alive := isBackendAlive(b.URL)
@@ -75,41 +82,35 @@ func (s *ServerPool) HealthCheck() {
 		if !alive {
 			status = "down"
 		}
-		log.Printf("%s [%s]\n", b.URL, status)
+		log.Printf("Backend %s is %s", b.URL, status)
 	}
 }
 
-// isBackendAlive checks whether a backend is alive by establishing a TCP connection
+// isBackendAlive checks whether a backend is reachable and responds with an HTTP 200 status code
 func isBackendAlive(u *url.URL) bool {
 	u.Path = "/health"
-	timeout := 2 * time.Second
+	timeout := 2 * time.Second // Health check timeout
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		log.Println("Unable to create the request context", err)
-		panic(err)
-	}
-
-	client := &http.Client{}
-	res, err := client.Do(req)
-	if err != nil {
-		log.Println("Site unreachable", err)
+		log.Printf("Error creating health check request: %v", err)
 		return false
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
+
+	client := &http.Client{
+		Timeout: timeout,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
 		if err != nil {
-
+			log.Printf("Error during health check for %s: %v", u, err)
+		} else {
+			log.Printf("Health check failed for %s with status code: %d", u, resp.StatusCode)
 		}
-	}(res.Body)
-
-	if res.StatusCode != http.StatusOK {
-		log.Printf("Health check failed with status code: %d", res.StatusCode)
 		return false
 	}
 
+	defer resp.Body.Close()
 	return true
 }

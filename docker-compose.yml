@@ -7,9 +7,12 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
-    environment:
-      BACKEND_URLS: "http://server1:80,http://server2:80,http://server3:80"
-      HEALTH_CHECK_INTERVAL: 30
+    volumes:
+      - ./config.yaml:/app/config.yaml  # Mount the YAML config file into the container
+    depends_on:
+      - server1
+      - server2
+      - server3
 
   server1:
     build:
