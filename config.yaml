@@ -1,6 +1,7 @@
 backends:
-  - url: http://backend1.example.com
-  - url: http://backend2.example.com
+  - url: http://server1:80
+  - url: http://server2:80
+  - url: http://server3:80
 
 health_check_interval: 10s   # Interval for health checks (e.g., 10s, 1m)
 max_latency: 100ms           # Maximum allowable latency
