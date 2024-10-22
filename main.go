@@ -5,7 +5,6 @@ import (
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"loadbalancer/backends"
-	"loadbalancer/health"
 	"loadbalancer/serverpool"
 	"log"
 	"net/http"
@@ -25,11 +24,13 @@ type Config struct {
 	HealthCheckTimeout  string          `yaml:"health_check_timeout"`
 	MaxRetries          int             `yaml:"max_retries"`
 	Port                int             `yaml:"port"`
+	GlobalRateLimit     int             `yaml:"global_requests_per_second"` // Global rate limit
 }
 
 // BackendConfig represents a backend server configuration
 type BackendConfig struct {
-	URL string `yaml:"url"`
+	URL             string `yaml:"url"`
+	RateLimitPerSec int    `yaml:"backend_requests_per_second,omitempty"` // Backend-specific rate limit
 }
 
 var pool serverpool.ServerPool
@@ -45,18 +46,34 @@ func main() {
 	// Override with environment variables if available
 	overrideWithEnv(&config)
 
-	// Parse backend URLs and add them to the server pool
+	// Set the global rate limit for all backends
+	pool.GlobalRateLimitPerSec = config.GlobalRateLimit
+
+	// Parse backend URLs and add them to the server pool with rate limits
 	for _, backend := range config.Backends {
 		url, err := url.Parse(backend.URL)
 		if err != nil {
 			log.Fatal(err)
 		}
-		pool.AddBackend(&backends.Backend{URL: url, Alive: true})
+
+		// If the backend doesn't have a specific rate limit, use the global one
+		rateLimit := backend.RateLimitPerSec
+		if rateLimit == 0 {
+			rateLimit = config.GlobalRateLimit
+		}
+
+		// Add backend with specific or global rate limit
+		pool.AddBackend(&backends.Backend{URL: url, Alive: true}, rateLimit)
 	}
 
 	// Start health checks with configured intervals
 	healthCheckInterval, _ := time.ParseDuration(config.HealthCheckInterval)
-	go health.CheckHealth(&pool, healthCheckInterval)
+	go func() {
+		for {
+			pool.HealthCheck()
+			time.Sleep(healthCheckInterval)
+		}
+	}()
 
 	// Handle incoming requests
 	http.HandleFunc("/", handleRequest)
@@ -122,6 +139,13 @@ func loadBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check the rate limit for the backend
+	if !pool.CheckRateLimit(backend, w) {
+		return
+	}
+
+	// Create a reverse proxy to forward the request
 	proxy := httputil.NewSingleHostReverseProxy(backend.URL)
 	proxy.ServeHTTP(w, r)
+
 }

@@ -1,6 +1,7 @@
 package backends
 
 import (
+	"golang.org/x/time/rate"
 	"net/url"
 	"sync"
 	"time"
@@ -8,10 +9,12 @@ import (
 
 // Backend holds the data for each backend server
 type Backend struct {
-	URL     *url.URL
-	Alive   bool
-	Mutex   sync.RWMutex
-	Latency time.Duration
+	URL             *url.URL
+	Alive           bool
+	Mutex           sync.RWMutex
+	Latency         time.Duration
+	RequestLimiter  *rate.Limiter // New rate limiter
+	RateLimitPerSec int           // Store the specific rate limit for this backend
 }
 
 // SetAlive sets the status of the backend (uses a write lock)
@@ -42,4 +45,9 @@ func (b *Backend) GetLatency() time.Duration {
 	latency := b.Latency
 	b.Mutex.RUnlock()
 	return latency
+}
+
+// AllowRequest checks if a request can be allowed for the backend, based on the rate limiter
+func (b *Backend) AllowRequest() bool {
+	return b.RequestLimiter.Allow()
 }

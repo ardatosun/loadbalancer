@@ -1,6 +1,7 @@
 package serverpool
 
 import (
+	"golang.org/x/time/rate"
 	"loadbalancer/backends"
 	"log"
 	"net/http"
@@ -9,29 +10,24 @@ import (
 	"time"
 )
 
-// ServerPool holds information about the list of backend servers and their current state
 type ServerPool struct {
-	backends []*backends.Backend
-	current  uint32 // To maintain round-robin state for backends
+	backends              []*backends.Backend
+	current               uint32 // To maintain round-robin state for backends
+	GlobalRateLimitPerSec int    // New global rate limit
 }
 
-// AddBackend adds a backend to the server pool
-func (s *ServerPool) AddBackend(backend *backends.Backend) {
+// AddBackend adds a backend to the server pool and sets up the rate limiter
+func (s *ServerPool) AddBackend(backend *backends.Backend, rateLimitPerSec int) {
+	backend.RequestLimiter = rate.NewLimiter(rate.Limit(rateLimitPerSec), rateLimitPerSec)
 	s.backends = append(s.backends, backend)
 }
 
-// NextIndex atomically increases the counter and returns an index for round-robin load balancing
-func (s *ServerPool) NextIndex() int {
-	return int(atomic.AddUint32(&s.current, 1) % uint32(len(s.backends)))
-}
-
-// GetNextPeer returns the next available backend based on latency. If no backend is alive, it falls back to round-robin.
+// GetNextPeer returns the next available backend based on latency or round-robin
 func (s *ServerPool) GetNextPeer() *backends.Backend {
 	var selected *backends.Backend
 	lowestLatency := time.Duration(1<<63 - 1) // Max int64 to find the backend with the lowest latency
 
 	for _, b := range s.backends {
-		// Only consider backends that are alive
 		if b.IsAlive() {
 			latency := b.GetLatency()
 			if latency < lowestLatency {
@@ -41,21 +37,28 @@ func (s *ServerPool) GetNextPeer() *backends.Backend {
 		}
 	}
 
-	// If no alive backends found, fall back to round-robin
 	if selected != nil {
 		log.Printf("Selected backend %s with lowest latency: %v", selected.URL, lowestLatency)
 		return selected
 	}
 
-	// Fallback to round-robin selection
 	index := s.NextIndex()
 	log.Printf("Falling back to round-robin. Selected backend: %s", s.backends[index].URL)
 	return s.backends[index]
 }
 
-// GetBackends returns the list of backends in the server pool
-func (s *ServerPool) GetBackends() []*backends.Backend {
-	return s.backends
+// CheckRateLimit checks if a backend can handle more requests, otherwise returns HTTP 429
+func (s *ServerPool) CheckRateLimit(backend *backends.Backend, w http.ResponseWriter) bool {
+	if !backend.AllowRequest() {
+		http.Error(w, "429 Too Many Requests", http.StatusTooManyRequests)
+		return false
+	}
+	return true
+}
+
+// NextIndex atomically increases the counter and returns an index for round-robin load balancing
+func (s *ServerPool) NextIndex() int {
+	return int(atomic.AddUint32(&s.current, 1) % uint32(len(s.backends)))
 }
 
 // MarkBackendStatus marks a backend's status as alive or down based on health checks
@@ -89,7 +92,7 @@ func (s *ServerPool) HealthCheck() {
 // isBackendAlive checks whether a backend is reachable and responds with an HTTP 200 status code
 func isBackendAlive(u *url.URL) bool {
 	u.Path = "/health"
-	timeout := 2 * time.Second // Health check timeout
+	timeout := 2 * time.Second
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {

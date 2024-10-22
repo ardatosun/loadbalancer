@@ -1,7 +1,11 @@
+global_requests_per_second: 100
 backends:
   - url: http://server1:80
+    backend_requests_per_second: 50
   - url: http://server2:80
+    backend_requests_per_second: 100
   - url: http://server3:80
+    backend_requests_per_second: 75
 
 health_check_interval: 10s   # Interval for health checks (e.g., 10s, 1m)
 max_latency: 100ms           # Maximum allowable latency
