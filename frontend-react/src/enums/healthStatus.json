@@ -1,0 +1,59 @@
+{
+    "backends": [
+      {
+        "id": "server1",
+        "ip_address": "192.168.1.101",
+        "status": "unhealthy",
+        "last_checked": "2023-10-20T18:00:00Z"
+      },
+      {
+        "id": "server2",
+        "ip_address": "192.168.1.102",
+        "status": "unhealthy",
+        "last_checked": "2024-10-20T18:00:00Z"
+      },
+      {
+        "id": "server3",
+        "ip_address": "192.168.1.103",
+        "status": "healthy",
+        "last_checked": "2023-10-20T18:00:00Z"
+      },
+      {
+        "id": "server4",
+        "ip_address": "192.168.1.104",
+        "status": "healthy",
+        "last_checked": "2024-10-20T18:00:00Z"
+      },
+      {
+        "id": "server5",
+        "ip_address": "192.168.1.122",
+        "status": "unhealthy",
+        "last_checked": "2024-10-20T18:00:00Z"
+      },
+      {
+        "id": "server6",
+        "ip_address": "192.168.1.133",
+        "status": "healthy",
+        "last_checked": "2024-10-20T18:00:00Z"
+      },
+      {
+        "id": "server7",
+        "ip_address": "192.168.1.151",
+        "status": "unhealthy",
+        "last_checked": "2023-10-20T18:00:00Z"
+      },
+      {
+        "id": "server8",
+        "ip_address": "192.168.1.122",
+        "status": "healthy",
+        "last_checked": "2024-10-20T18:00:00Z"
+      },
+      {
+        "id": "server9",
+        "ip_address": "192.168.1.193",
+        "status": "healthy",
+        "last_checked": "2024-10-20T18:00:00Z"
+      }
+    ]
+  }
+  
