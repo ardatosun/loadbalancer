@@ -15,16 +15,20 @@ export default function Dashboard() {
     const [unhealthyIP, setUnhealthyIP] = useState([]);
 
     useEffect(()=>{
+       // Set fetched data to backend state (JSON data)
        if(backends.length > 0){
         setBackend(backends);
        }
     },[backends]);
 
     useEffect(()=>{
+        // Total of healthy servers
         setHealthyIP(prevState => {
             const healthyServer = backend.filter(ip => ip.status === "healthy");
             return healthyServer;
         })
+
+        // Total of unhealthy servers
         setUnhealthyIP(prevState => {
             const unhealthyServer = backend.filter(ip => ip.status === "unhealthy");
             return unhealthyServer;

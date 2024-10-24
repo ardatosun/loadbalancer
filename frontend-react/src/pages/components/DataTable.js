@@ -20,6 +20,7 @@ const DataTable = ({ data }) => {
           const ip_address = item.ip_address;
           const status = item.status;
           const last_checked = item.last_checked;
+          // Format to readable date
           const formatted_date = moment(last_checked).format("MMMM D, YYYY h:mm A");
           return (
             <tr key={item.id} className="">
@@ -27,8 +28,7 @@ const DataTable = ({ data }) => {
               <td className="border border-lightgrey py-2 px-4 tracking-wider"><span className='flex justify-center'>{ip_address}</span></td>
               <td className="border border-lightgrey py-2 px-4 flex justify-center">
                   <Chips 
-                    txtColor={status === "healthy" ? "text-limegreen" : "text-brightred"}
-                    bgColor={status === "healthy" ? "bg-darkgreen" : "bg-darkred"}
+                    // Led like status design
                     ledColor={status === "healthy" ? "bg-limegreen" : "bg-brightred"}
                     text={status}
                   />

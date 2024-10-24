@@ -13,6 +13,7 @@ export default function Searchbar({ data, updateData }) {
                 const updatedData = data
                     .filter(item =>
                         Object.values(item).some(value => 
+                            // Filter out data if value matches search text
                             String(value).toLowerCase().includes(trimmedSearchText)
                         )
                     )
@@ -24,6 +25,7 @@ export default function Searchbar({ data, updateData }) {
                         const bMatch = Object.values(b).some(value => 
                             String(value).toLowerCase() === trimmedSearchText
                         );
+
                         // Prioritize exact matches
                         return bMatch - aMatch;
                     });

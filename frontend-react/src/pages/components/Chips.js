@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { TbArrowsDownUp } from "react-icons/tb";
 
-export default function Chips({bgColor, txtColor, ledColor, text}) {
+export default function Chips({ledColor, text}) {
 
     return (
         <div className={`rounded-lg flex justify-center items-center w-5/12 h-8 px-2`}>
