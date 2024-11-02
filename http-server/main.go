@@ -1,47 +1,138 @@
-// main.go
 package main
 
 import (
 	"fmt"
+	"github.com/fsnotify/fsnotify"
+	"gopkg.in/yaml.v3"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"sync"
 )
 
-// StaticResponse holds the configuration for static responses
 type StaticResponse struct {
-	URL          string
-	StatusCode   int
-	ResponseBody string
+	URL          string `yaml:"url"`
+	StatusCode   int    `yaml:"status_code"`
+	ResponseBody string `yaml:"response_body"`
 }
 
-// Global map for storing static responses
-var staticResponses = map[string]StaticResponse{
-	"/static1": {URL: "/static1", StatusCode: http.StatusOK, ResponseBody: "This is static response 1."},
-	"/static2": {URL: "/static2", StatusCode: http.StatusNotFound, ResponseBody: "Static resource not found."},
+// Backend holds configuration for each backend server
+type Backend struct {
+	URL                      string `yaml:"url"`
+	BackendRequestsPerSecond int    `yaml:"backend_requests_per_second"`
 }
 
-func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "80"
+// Config holds all configurations for the server
+type Config struct {
+	StaticResponses         []StaticResponse `yaml:"static_responses"`
+	GlobalRequestsPerSecond int              `yaml:"global_requests_per_second"`
+	Backends                []Backend        `yaml:"backends"`
+	HealthCheckInterval     string           `yaml:"health_check_interval"`
+	MaxLatency              string           `yaml:"max_latency"`
+	HealthCheckTimeout      string           `yaml:"health_check_timeout"`
+	MaxRetries              int              `yaml:"max_retries"`
+	Port                    int              `yaml:"port"`
+}
+
+// Global map for storing static responses, with mutex for concurrent access
+var (
+	staticResponses = make(map[string]StaticResponse)
+	mu              sync.RWMutex // Mutex to protect staticResponses map
+)
+
+// LoadConfig reads the configuration file and unmarshals it into the Config struct
+func LoadConfig(filepath string) (*Config, error) {
+	data, err := ioutil.ReadFile(filepath)
+	if err != nil {
+		return nil, err
+	}
+	var config Config
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
+// updateStaticResponses safely updates the staticResponses map with new values
+func updateStaticResponses(newResponses []StaticResponse) {
+	mu.Lock()
+	defer mu.Unlock()
+	staticResponses = make(map[string]StaticResponse) // Clear existing map
+	for _, resp := range newResponses {
+		staticResponses[resp.URL] = resp
+	}
+	log.Println("Static responses updated.")
+}
+
+// reloadConfig loads and applies the configuration file to update server behavior
+func reloadConfig(filepath string) error {
+	config, err := LoadConfig(filepath)
+	if err != nil {
+		return err
+	}
+	updateStaticResponses(config.StaticResponses)
+	return nil
+}
+
+// WatchConfig watches the configuration file for changes and reloads configurations when changes are detected
+func WatchConfig(filepath string) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer watcher.Close()
+
+	err = watcher.Add(filepath)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	http.HandleFunc("/", requestHandler)
-
-	log.Printf("HTTP Server started on port %s\n", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	for {
+		select {
+		case event := <-watcher.Events:
+			if event.Op&fsnotify.Write == fsnotify.Write {
+				log.Println("Config file changed, reloading...")
+				if err := reloadConfig(filepath); err != nil {
+					log.Printf("Error reloading config: %v\n", err)
+				}
+			}
+		case err := <-watcher.Errors:
+			log.Printf("Watcher error: %v\n", err)
+		}
+	}
 }
 
 // requestHandler handles incoming HTTP requests
 func requestHandler(w http.ResponseWriter, r *http.Request) {
-	// Check for static responses first
+	mu.RLock()
+	defer mu.RUnlock()
 	if staticResponse, exists := staticResponses[r.URL.Path]; exists {
 		w.WriteHeader(staticResponse.StatusCode)
 		fmt.Fprint(w, staticResponse.ResponseBody)
 		return
 	}
 
-	// Forward to the backend or return a default response
 	fmt.Fprintf(w, "Hello from HTTP Server on port %s\n", os.Getenv("PORT"))
+}
+
+func main() {
+
+	config, err := LoadConfig("config.yml")
+	if err != nil {
+		log.Fatalf("Failed to load config: %v\n", err)
+	}
+
+	updateStaticResponses(config.StaticResponses)
+
+	go WatchConfig("config.yml")
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = fmt.Sprintf("%d", config.Port)
+	}
+
+	http.HandleFunc("/", requestHandler)
+	log.Printf("HTTP Server started on port %s\n", port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
