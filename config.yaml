@@ -1,14 +1,22 @@
+static_responses:
+  - url: "/static1"
+    status_code: 200
+    response_body: "This is static response 1."
+  - url: "/static2"
+    status_code: 404
+    response_body: "Static resource not found."
+
 global_requests_per_second: 100
 backends:
-  - url: http://server1:80
+  - url: "http://server1:80"
     backend_requests_per_second: 50
-  - url: http://server2:80
+  - url: "http://server2:80"
     backend_requests_per_second: 100
-  - url: http://server3:80
+  - url: "http://server3:80"
     backend_requests_per_second: 75
 
-health_check_interval: 10s   # Interval for health checks (e.g., 10s, 1m)
-max_latency: 100ms           # Maximum allowable latency
-health_check_timeout: 2s     # Timeout for health checks
-max_retries: 3               # Max retries before marking backend as down
-port: 8080                   # Port the load balancer will listen on
+health_check_interval: "10s"   # Interval for health checks
+max_latency: "100ms"           # Maximum allowable latency
+health_check_timeout: "2s"     # Timeout for health checks
+max_retries: 3                 # Max retries before marking backend as down
+port: 8080                     # Port the load balancer will listen on
