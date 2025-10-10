@@ -1,8 +1,9 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"loadbalancer/backends"
 	"loadbalancer/serverpool"
@@ -11,9 +12,13 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
+
+	"gopkg.in/yaml.v2"
 )
 
 // Config structure to hold the parsed YAML values
@@ -75,12 +80,39 @@ func main() {
 		}
 	}()
 
-	// Handle incoming requests
-	http.HandleFunc("/", handleRequest)
+	// setup new http mux for incoming requests
+	httpEngine := http.NewServeMux()
+	httpEngine.HandleFunc("/", handleRequest)
 
 	port := fmt.Sprintf(":%d", config.Port)
+
+	httpSrv := &http.Server{
+		Addr:    port,
+		Handler: httpEngine,
+	}
+
+	go func() {
+		if err := httpSrv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("server experienced a shutdown")
+		}
+	}()
+
 	log.Printf("Load Balancer started on %s", port)
-	log.Fatal(http.ListenAndServe(port, nil))
+
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+
+	shutdownSignal := <-signalChan
+	log.Printf("Received signal: %s. Shutting down load balancer", shutdownSignal)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := httpSrv.Shutdown(ctx); err != nil {
+		log.Printf("Failed to shut down load balancer gracefully")
+	} else {
+		log.Printf("Load balancer shut down gracefully")
+	}
 }
 
 // loadConfig parses the YAML configuration file
