@@ -103,15 +103,15 @@ func main() {
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 
 	shutdownSignal := <-signalChan
-	log.Printf("Received signal: %s. Shutting down", shutdownSignal)
+	log.Printf("Received signal: %s. Shutting down load balancer", shutdownSignal)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := httpSrv.Shutdown(ctx); err != nil {
-		log.Printf("Failed to shut down server gracefully")
+		log.Printf("Failed to shut down load balancer gracefully")
 	} else {
-		log.Printf("Server shut down gracefully")
+		log.Printf("Load balancer shut down gracefully")
 	}
 }
 

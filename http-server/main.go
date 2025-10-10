@@ -1,14 +1,20 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"github.com/fsnotify/fsnotify"
-	"gopkg.in/yaml.v3"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
+	"time"
+
+	"github.com/fsnotify/fsnotify"
+	"gopkg.in/yaml.v3"
 )
 
 type StaticResponse struct {
@@ -132,7 +138,35 @@ func main() {
 		port = fmt.Sprintf("%d", config.Port)
 	}
 
-	http.HandleFunc("/", requestHandler)
+	// setup new http mux for incoming requests
+	httpEngine := http.NewServeMux()
+	httpEngine.HandleFunc("/", requestHandler)
+
+	httpSrv := &http.Server{
+		Addr:    port,
+		Handler: httpEngine,
+	}
+
+	go func() {
+		if err := httpSrv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("server experienced a shutdown")
+		}
+	}()
+
 	log.Printf("HTTP Server started on port %s\n", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+
+	shutdownSignal := <-signalChan
+	log.Printf("Received signal: %s. Shutting down", shutdownSignal)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := httpSrv.Shutdown(ctx); err != nil {
+		log.Printf("Failed to shut down server gracefully")
+	} else {
+		log.Printf("Server shut down gracefully")
+	}
 }
