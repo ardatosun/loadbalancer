@@ -1,19 +1,25 @@
 package serverpool
 
 import (
-	"golang.org/x/time/rate"
 	"loadbalancer/backends"
 	"log"
 	"net/http"
 	"net/url"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 type ServerPool struct {
 	backends              []*backends.Backend
 	current               uint32 // To maintain round-robin state for backends
 	GlobalRateLimitPerSec int    // New global rate limit
+}
+
+// GetBackends returns all backends.
+func (s *ServerPool) GetBackends() []*backends.Backend {
+	return s.backends
 }
 
 // AddBackend adds a backend to the server pool and sets up the rate limiter
