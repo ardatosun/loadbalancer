@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/fsnotify/fsnotify"
-	"gopkg.in/yaml.v3"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"sync"
+
+	"github.com/fsnotify/fsnotify"
+	"gopkg.in/yaml.v3"
 )
 
 type StaticResponse struct {
@@ -43,7 +43,7 @@ var (
 
 // LoadConfig reads the configuration file and unmarshals it into the Config struct
 func LoadConfig(filepath string) (*Config, error) {
-	data, err := ioutil.ReadFile(filepath)
+	data, err := os.ReadFile(filepath)
 	if err != nil {
 		return nil, err
 	}
