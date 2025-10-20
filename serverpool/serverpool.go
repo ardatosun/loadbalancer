@@ -120,6 +120,6 @@ func isBackendAlive(u *url.URL) bool {
 		return false
 	}
 
-	defer resp.Body.Close()
+	resp.Body.Close()
 	return true
 }
