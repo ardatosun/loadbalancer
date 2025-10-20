@@ -58,7 +58,7 @@ func isBackendAlive(u *url.URL, timeout time.Duration) bool {
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-
+			log.Printf("body close failed: %v", err)
 		}
 	}(res.Body)
 
