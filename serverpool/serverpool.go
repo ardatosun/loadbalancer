@@ -120,6 +120,8 @@ func isBackendAlive(u *url.URL) bool {
 		return false
 	}
 
-	resp.Body.Close()
+	if err := resp.Body.Close(); err != nil {
+		log.Printf("body close failed: %v", err)
+	}
 	return true
 }
