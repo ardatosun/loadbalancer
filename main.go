@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"gopkg.in/yaml.v2"
-	"io/ioutil"
 	"loadbalancer/backends"
 	"loadbalancer/serverpool"
 	"log"
@@ -14,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v2"
 )
 
 // Config structure to hold the parsed YAML values
@@ -86,7 +86,7 @@ func main() {
 // loadConfig parses the YAML configuration file
 func loadConfig() Config {
 	var config Config
-	file, err := ioutil.ReadFile("config.yaml")
+	file, err := os.ReadFile("config.yaml")
 	if err != nil {
 		log.Fatalf("Error reading config file: %v", err)
 	}
